@@ -9,12 +9,22 @@ from platformdirs import PlatformDirs
 if TYPE_CHECKING:
     from PySide6.QtGui import QIcon
 
-DIRS = PlatformDirs("netflix-client", "netflix-client")
+_snap_data = os.environ.get("SNAP_USER_DATA", "")
+_snap_common = os.environ.get("SNAP_USER_COMMON", "")
+_is_snap = bool(os.environ.get("SNAP"))
 
-CONFIG_DIR = Path(DIRS.user_config_dir)
-DATA_DIR = Path(DIRS.user_data_dir)
-CACHE_DIR = Path(DIRS.user_cache_dir)
-LOG_DIR = Path(DIRS.user_log_dir)
+if _is_snap and _snap_common:
+    DIRS = None
+    CONFIG_DIR = Path(_snap_common) / "config"
+    DATA_DIR = Path(_snap_common) / "data"
+    CACHE_DIR = Path(_snap_common) / "cache"
+    LOG_DIR = Path(_snap_common) / "log"
+else:
+    DIRS = PlatformDirs("netflix-client", "netflix-client")
+    CONFIG_DIR = Path(DIRS.user_config_dir)
+    DATA_DIR = Path(DIRS.user_data_dir)
+    CACHE_DIR = Path(DIRS.user_cache_dir)
+    LOG_DIR = Path(DIRS.user_log_dir)
 
 PROFILES_DIR = DATA_DIR / "profiles"
 DOWNLOADS_DIR = Path.home() / "Videos" / "Netflix"
