@@ -1,6 +1,6 @@
-name: netflix-client
+name: open-netflix-client
 base: core24
-version: "1.0.0"
+version: "1.0.1"
 title: Unofficial Netflix Client
 summary: Unofficial Netflix desktop client for Linux
 contact: mrzazon1@gmail.com
@@ -46,17 +46,9 @@ apps:
       QTWEBENGINE_DISABLE_SANDBOX: "1"
       QT_QPA_PLATFORMTHEME: qt6ct
 
-slots:
-  mpris:
-    interface: dbus
-    bus: session
-    name: org.mpris.MediaPlayer2.netflix
-
 plugs:
   keyring:
-    interface: personal-files
-    read:
-      - $HOME/.local/share/keyring
+    interface: password-manager-service
 
 parts:
   launcher:
