@@ -7,6 +7,7 @@ contact: mrzazon1@gmail.com
 license: MIT
 issues: https://github.com/mrZazon/netflix-client/issues
 source-code: https://github.com/mrZazon/netflix-client
+icon: app/assets/icon.svg
 description: |
   An unofficial, native-feeling Linux desktop client for Netflix built with
   Python and Qt (PySide6). Provides deep desktop integration including system
