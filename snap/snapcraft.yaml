@@ -1,6 +1,6 @@
 name: open-netflix-client
 base: core24
-version: "1.0.1"
+version: "1.0.2"
 title: Unofficial Netflix Client
 summary: Unofficial Netflix desktop client for Linux
 contact: mrzazon1@gmail.com
