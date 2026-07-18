@@ -12,4 +12,4 @@ mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:---disable-software-rasterizer}"
 export QTWEBENGINE_DISABLE_SANDBOX="${QTWEBENGINE_DISABLE_SANDBOX:-1}"
 
-exec "$SNAP/usr/bin/python3" -m app.main "$@"
+exec "$SNAP/bin/python3" -m app.main "$@"
