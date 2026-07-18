@@ -101,6 +101,10 @@ def _configure_webengine(args: argparse.Namespace) -> None:
         flags.append("--disable-gpu")
         flags.append("--enable-unsafe-swiftshader")
 
+    if is_snap:
+        flags.append("--disable-gpu")
+        flags.append("--enable-unsafe-swiftshader")
+
     if flags:
         existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
         combined = f"{existing} {' '.join(flags)}".strip()

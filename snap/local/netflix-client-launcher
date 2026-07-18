@@ -25,7 +25,7 @@ done
 unset _wv_path CDM_NAME
 
 export QTWEBENGINE_DISABLE_SANDBOX="${QTWEBENGINE_DISABLE_SANDBOX:-1}"
-export QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-gpu-sandbox"
+export QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-gpu-sandbox --disable-gpu --enable-unsafe-swiftshader"
 
 cd /
 exec "$SNAP/bin/python3" -m app.main "$@"
