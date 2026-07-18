@@ -1,0 +1,18 @@
+[Desktop Entry]
+Name=Netflix Client
+GenericName=Netflix Client
+Comment=Unofficial Netflix desktop client for Linux with native desktop integration
+Exec=netflix-client %U
+Icon=netflix-client
+Type=Application
+Categories=AudioVideo;Player;TV;
+Terminal=false
+StartupNotify=true
+StartupWMClass=netflix-client
+Keywords=netflix;video;stream;tv;movies;
+X-Snap-Services=netflix-client;
+
+[Desktop Action NewWindow]
+Name=Open Netflix
+Exec=netflix-client
+

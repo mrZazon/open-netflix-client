@@ -1,0 +1,3 @@
+[console_scripts]
+netflix = app.main:main
+netflix-client = app.main:main

@@ -1,0 +1,22 @@
+Package: netflix-client
+Version: 1.0.0
+Section: video
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.12),
+         python3-pyside6 (>= 6.6),
+         python3-keyring,
+         python3-platformdirs,
+         notify-send
+Recommends: python3-dasbus
+Maintainer: Netflix Client Contributors
+Homepage: https://github.com/netflix-client/netflix-client
+Description: Unofficial Netflix desktop client for Linux
+ A native-feeling Linux desktop client for Netflix built with Python
+ and Qt (PySide6). Integrates deeply with the desktop environment
+ including system tray, MPRIS media controls, global shortcuts,
+ and native notifications.
+ .
+ This package is an independent, unofficial client and is NOT affiliated
+ with, endorsed by, or sponsored by Netflix, Inc. Netflix is a registered
+ trademark of Netflix, Inc.

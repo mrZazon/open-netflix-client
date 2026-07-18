@@ -1,0 +1,144 @@
+# Netflix Client
+
+**Unofficial** Netflix desktop client for Linux.
+
+A native-feeling Linux desktop client for Netflix built with Python and Qt (PySide6). Provides deep desktop integration — system tray, MPRIS media controls, global keyboard shortcuts, and Picture-in-Picture — that a browser alone cannot offer.
+
+> **This is NOT an official Netflix product.** This project is an independent, unofficial client. It is not affiliated with, endorsed by, or sponsored by Netflix, Inc. Netflix is a registered trademark of Netflix, Inc.
+
+---
+
+## Features
+
+- Native Qt window with adaptive dark mode and rounded corners
+- System tray integration with playback controls
+- MPRIS media controls — use your keyboard media keys to play, pause, and seek
+- Global keyboard shortcuts (Ctrl+Shift+P to play/pause from anywhere)
+- Picture-in-Picture mode
+- Multiple user profiles with persistent cookies
+- Native desktop notifications (download complete, playback state, session expired)
+- Hardware-accelerated video via QtWebEngine
+- Settings import/export
+- Under 250 MB RAM
+
+## Installation
+
+### From PyPI (recommended)
+
+```bash
+pip install netflix-client
+netflix-client
+
+# Optional: MPRIS support
+pip install netflix-client[mpris]
+```
+
+### From source
+
+```bash
+git clone https://github.com/netflix-client/netflix-client
+cd netflix-client
+pip install -e .
+netflix-client
+```
+
+### Snap
+
+```bash
+# Install from Snap Store (once published)
+snap install netflix-client
+
+# Or build locally
+snapcraft
+snap install netflix-client_*.snap --dangerous
+```
+
+### AppImage / Deb / RPM
+
+See the [releases page](https://github.com/netflix-client/netflix-client/releases) or build with:
+
+```bash
+make build-deb      # Debian / Ubuntu
+make build-rpm      # Fedora / openSUSE
+make build-appimage # AppImage
+```
+
+## Usage
+
+```bash
+netflix-client --help
+```
+
+| Argument | Description |
+|----------|-------------|
+| `--debug` | Enable debug logging |
+| `--profile NAME` | Start with a specific profile |
+| `--version` | Show version |
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+Shift+N` | Open Netflix |
+| `Ctrl+Shift+P` | Play / Pause |
+| `Ctrl+Shift+M` | Mute / Unmute |
+| `Ctrl+Shift+F` | Toggle Fullscreen |
+| `Ctrl+Shift+I` | Picture in Picture |
+| `Ctrl+Shift+T` | Always on Top |
+| `Ctrl+Shift+R` | Reload page |
+| `Ctrl+Shift+D` | Developer Tools |
+| `Ctrl+Q` | Quit |
+| `F11` | Fullscreen |
+
+## Snap Building
+
+```bash
+# Install snapcraft
+snap install snapcraft --classic
+
+# Build
+snapcraft
+
+# Install locally
+snap install netflix-client_*.snap --dangerous
+```
+
+## Architecture
+
+```
+app/
+├── main.py            Entry point and argument parsing
+├── window.py          Main window with toolbar and status bar
+├── browser.py         QtWebEngine with persistent profiles
+├── shortcuts.py       Global keyboard shortcuts
+├── settings.py        JSON settings manager
+├── settings_dialog.py Settings UI
+├── tray.py            System tray integration
+├── mpris.py           MPRIS D-Bus interface
+├── pip.py             Picture-in-Picture window
+├── download.py        Download queue manager
+├── notifications.py   Native notifications (notify-send)
+├── updater.py         Update checker (Qt async)
+├── css/style.qss      Qt stylesheet
+├── assets/icon.svg    App icon
+└── utils/
+    ├── config.py      XDG paths and constants
+    ├── platform.py    Desktop environment detection
+    └── singleton.py   Single-instance guard
+```
+
+## Disclaimer
+
+This project is an independent, unofficial client for Netflix. It is not affiliated with, endorsed by, or sponsored by Netflix, Inc. "Netflix" is a registered trademark of Netflix, Inc. All trademarks and rights belong to their respective owners.
+
+This application:
+- Does **not** bypass DRM or content protections
+- Does **not** download or store Netflix content locally
+- Does **not** modify Netflix's website or user interface
+- Does **not** collect any user data or analytics
+- Uses the same Widevine DRM as any standard web browser
+- Is simply a wrapper around Netflix's existing web interface with added desktop integration features
+
+## License
+
+MIT. See [LICENSE](LICENSE) for details.
