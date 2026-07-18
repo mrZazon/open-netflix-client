@@ -1,13 +1,13 @@
 name: open-netflix-client
 base: core24
-version: "1.0.3"
+version: "1.0.6"
 title: Unofficial Netflix Client
 summary: Unofficial Netflix desktop client for Linux
 contact: mrzazon1@gmail.com
 license: MIT
 issues: https://github.com/mrZazon/netflix-client/issues
 source-code: https://github.com/mrZazon/netflix-client
-icon: app/assets/icon.svg
+icon: app/assets/icon.png
 description: |
   An unofficial, native-feeling Linux desktop client for Netflix built with
   Python and Qt (PySide6). Provides deep desktop integration including system
@@ -41,9 +41,10 @@ apps:
       - desktop-legacy
       - unity7
       - keyring
+      - browser-support
+      - hardware-observe
     environment:
       PYTHONPATH: $SNAP/lib/python3.12/site-packages:$SNAP/usr/lib/python3/dist-packages
-      QTWEBENGINE_CHROMIUM_FLAGS: --disable-software-rasterizer
       QTWEBENGINE_DISABLE_SANDBOX: "1"
       QT_QPA_PLATFORMTHEME: qt6ct
 
@@ -65,8 +66,8 @@ parts:
       install -Dm644 packaging/netflix-client.desktop \
         $SNAPCRAFT_PART_INSTALL/share/applications/netflix-client.desktop
       # Icon is resolved by name through hicolor theme
-      install -Dm644 app/assets/icon.svg \
-        $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/scalable/apps/netflix-client.svg
+      install -Dm644 app/assets/icon.png \
+        $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/256x256/apps/netflix-client.png
 
   netflix-client:
     plugin: python
@@ -97,6 +98,21 @@ parts:
       - libxcb-shape0
       - libxcb-xkb1
       - libxkbcommon-x11-0
+      - libxcomposite1
+      - libxfixes3
+      - libxrandr2
+      - libxrender1
+      - libxtst6
+      - libxi6
+      - libxext6
+      - libx11-6
+      - libxxf86vm1
+      - libxcb-xfixes0
+      - libxcb-randr0
+      - libxcb-shm0
+      - libxcb-xinput0
+      - libxkbfile1
+      - libudev1
     python-packages:
       - PySide6>=6.6
       - keyring>=24.0

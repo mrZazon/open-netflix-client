@@ -31,7 +31,7 @@ USER_AGENT = (
 
 APP_NAME = "Netflix Client"
 ORG_NAME = "netflix-client"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.6"
 
 
 def ensure_dirs() -> None:
@@ -49,5 +49,5 @@ def get_app_icon() -> QIcon:
     theme_icon = QIcon.fromTheme("netflix-client")
     if not theme_icon.isNull():
         return theme_icon
-    svg_path = str(asset_path("icon.svg"))
-    return QIcon(svg_path)
+    png_path = str(asset_path("icon.png"))
+    return QIcon(png_path)

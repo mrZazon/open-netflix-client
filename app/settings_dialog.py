@@ -168,6 +168,16 @@ class SettingsDialog(QDialog):
         clear_btn.clicked.connect(self._clear_cache)
         form.addRow("", clear_btn)
 
+        import os
+        cdm_path = os.environ.get("QTWEBENGINE_WIDEVINE_CDM_PATH", "")
+        if cdm_path and os.path.isfile(cdm_path):
+            status = QLabel(f"DRM: OK ({cdm_path})")
+            status.setStyleSheet("color: #2e7d32; font-weight: 600;")
+        else:
+            status = QLabel("DRM: Widevine CDM not found")
+            status.setStyleSheet("color: #c62828; font-weight: 600;")
+        form.addRow("DRM Status:", status)
+
         return tab
 
     def _privacy_tab(self) -> QWidget:
