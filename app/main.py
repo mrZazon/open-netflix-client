@@ -68,29 +68,24 @@ def _configure_widevine(cdm_path_override: str | None = None) -> None:
             "Widevine CDM path already set: %s",
             os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"],
         )
-        return
+        return True
 
     if cdm_path_override:
         if os.path.isfile(cdm_path_override):
             os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"] = cdm_path_override
             log.info("Widevine CDM (manual): %s", cdm_path_override)
-            return
+            return True
         log.warning("Widevine CDM path not found: %s", cdm_path_override)
 
-    from app.utils.widevine import find_system_cdm, setup_widevine
+    from app.utils.widevine import find_system_cdm
 
     cdm_path = find_system_cdm()
-    if not cdm_path:
-        log.info("Widevine CDM not found, auto-installing...")
-        cdm_path = setup_widevine()
-
     if cdm_path:
         os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"] = cdm_path
-        log.info("Widevine CDM ready: %s", cdm_path)
-    else:
-        log.warning(
-            "Widevine CDM not available. DRM content will not play."
-        )
+        log.info("Widevine CDM found: %s", cdm_path)
+        return True
+
+    return False
 
 
 def _configure_webengine(args: argparse.Namespace) -> None:
@@ -113,8 +108,6 @@ def _configure_webengine(args: argparse.Namespace) -> None:
 
     if is_snap or args.no_sandbox:
         os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
-
-    _configure_widevine(args.widevine_cdm_path)
 
 
 def _clear_webengine_if_needed() -> None:
@@ -171,7 +164,12 @@ def run(args: argparse.Namespace) -> None:
     if args.profile:
         settings.set("profiles", "current", args.profile)
 
+    cdm_ready = _configure_widevine(args.widevine_cdm_path)
+
     window = MainWindow()
+
+    if not cdm_ready:
+        _start_widevine_install(window)
 
     if settings.get("general", "launch_minimized", False):
         window.hide()
@@ -181,6 +179,34 @@ def run(args: argparse.Namespace) -> None:
     exit_code = app.exec()
     settings.flush()
     sys.exit(exit_code)
+
+
+def _start_widevine_install(window: "MainWindow") -> None:
+    import os
+    from PySide6.QtCore import QThread, Signal as QtSignal
+
+    class CdmInstaller(QThread):
+        finished = QtSignal(str)
+
+        def run(self) -> None:
+            from app.utils.widevine import setup_widevine
+            path = setup_widevine()
+            self.finished.emit(path or "")
+
+    def _on_cdm_ready(path: str) -> None:
+        if path:
+            os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"] = path
+            log.info("Widevine CDM installed: %s", path)
+            window.browser.reload()
+        else:
+            log.warning(
+                "Widevine CDM install failed. DRM will not work."
+            )
+
+    installer = CdmInstaller(window)
+    installer.finished.connect(_on_cdm_ready)
+    installer.start()
+    log.info("Widevine CDM installing in background...")
 
 
 def main() -> None:

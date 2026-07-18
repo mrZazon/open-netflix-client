@@ -93,7 +93,7 @@ class BrowserPage(QWebEnginePage):
         self, level: int, message: str, line: int, source: str
     ) -> None:
         if level != QWebEnginePage.JavaScriptConsoleMessageLevel.InfoMessageLevel:
-            log.debug("JS [%d] %s:%d: %s", level, source, line, message)
+            log.debug("JS [%s] %s:%d: %s", level, source, line, message)
 
 
 class NetflixBrowser(QObject):
