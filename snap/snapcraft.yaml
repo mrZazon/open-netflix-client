@@ -64,8 +64,7 @@ parts:
     override-build: |
       install -Dm644 packaging/netflix-client.desktop \
         $SNAPCRAFT_PART_INSTALL/share/applications/netflix-client.desktop
-      sed -i "s|Icon=netflix-client|Icon=\${SNAP}/meta/gui/icon.svg|" \
-        $SNAPCRAFT_PART_INSTALL/share/applications/netflix-client.desktop
+      # Icon is resolved by name through hicolor theme
       install -Dm644 app/assets/icon.svg \
         $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/scalable/apps/netflix-client.svg
 
