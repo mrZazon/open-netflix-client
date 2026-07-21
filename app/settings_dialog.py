@@ -169,8 +169,13 @@ class SettingsDialog(QDialog):
         form.addRow("", clear_btn)
 
         import os
-        cdm_path = os.environ.get("QTWEBENGINE_WIDEVINE_CDM_PATH", "")
-        if cdm_path and os.path.isfile(cdm_path):
+        from app.utils.widevine import CDM_FILENAME
+        cdm_dir = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+        cdm_found = False
+        if "--widevine-path=" in cdm_dir:
+            cdm_path = cdm_dir.split("--widevine-path=")[1].split()[0]
+            cdm_found = os.path.isfile(cdm_path)
+        if cdm_found:
             status = QLabel(f"DRM: OK ({cdm_path})")
             status.setStyleSheet("color: #2e7d32; font-weight: 600;")
         else:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import signal
 import sys
 
@@ -60,37 +61,166 @@ def configure_qt() -> None:
     QApplication.setDesktopFileName("netflix-client")
 
 
-def _configure_widevine(cdm_path_override: str | None = None) -> None:
-    import os
-
-    if os.environ.get("QTWEBENGINE_WIDEVINE_CDM_PATH"):
-        log.debug(
-            "Widevine CDM path already set: %s",
-            os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"],
-        )
-        return True
+def _find_cdm_so(cdm_path_override: str | None = None) -> str | None:
+    from pathlib import Path
 
     if cdm_path_override:
-        if os.path.isfile(cdm_path_override):
-            os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"] = cdm_path_override
-            log.info("Widevine CDM (manual): %s", cdm_path_override)
-            return True
-        log.warning("Widevine CDM path not found: %s", cdm_path_override)
+        p = Path(cdm_path_override)
+        if p.is_file():
+            return str(p)
+        if p.is_dir() and (p / "libwidevinecdm.so").is_file():
+            return str(p / "libwidevinecdm")
 
     from app.utils.widevine import find_system_cdm
 
-    cdm_path = find_system_cdm()
-    if cdm_path:
-        os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"] = cdm_path
-        log.info("Widevine CDM found: %s", cdm_path)
-        return True
+    cdm_dir = find_system_cdm()
+    if cdm_dir:
+        so = Path(cdm_dir) / "libwidevinecdm.so"
+        if so.is_file():
+            return str(so)
+    return None
 
+
+def _set_widevine_flag(cdm_so_path: str) -> None:
+    flag = f"--widevine-path={cdm_so_path}"
+    existing = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
+    if flag not in existing:
+        combined = f"{existing} {flag}".strip()
+        os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = combined
+    log.info("Widevine flag set: %s", flag)
+
+
+def _configure_widevine(cdm_path_override: str | None = None) -> bool:
+    cdm_so = _find_cdm_so(cdm_path_override)
+    if cdm_so:
+        _set_widevine_flag(cdm_so)
+        return True
     return False
 
 
-def _configure_webengine(args: argparse.Namespace) -> None:
-    import os
+def _ensure_widevine(cdm_path_override: str | None = None) -> None:
+    if _configure_widevine(cdm_path_override):
+        return
 
+    from PySide6.QtWidgets import (
+        QDialog, QVBoxLayout, QLabel, QProgressBar,
+    )
+    from PySide6.QtGui import QFont
+    from PySide6.QtCore import Qt, QThread, Signal as QtSignal
+
+    dialog = QDialog()
+    dialog.setWindowTitle("Netflix Client")
+    dialog.setFixedSize(420, 180)
+    dialog.setWindowFlags(
+        Qt.WindowType.Dialog | Qt.WindowType.CustomizeWindowHint
+        | Qt.WindowType.WindowTitleHint
+    )
+    dialog.setStyleSheet("""
+        QDialog { background: #141414; }
+        QLabel { color: #999; font-size: 12px; }
+    """)
+
+    layout = QVBoxLayout(dialog)
+    layout.setContentsMargins(24, 24, 24, 24)
+    layout.setSpacing(12)
+
+    title = QLabel("Netflix Client")
+    title.setStyleSheet(
+        "color: #e50914; font-size: 18px; font-weight: bold;"
+    )
+    title.setFont(QFont("sans-serif", 18, QFont.Weight.Bold))
+    layout.addWidget(title)
+
+    status = QLabel("Preparing DRM component...")
+    status.setFont(QFont("sans-serif", 11))
+    layout.addWidget(status)
+
+    progress = QProgressBar()
+    progress.setRange(0, 100)
+    progress.setValue(0)
+    progress.setTextVisible(True)
+    progress.setStyleSheet("""
+        QProgressBar {
+            background: #333; border: none; border-radius: 4px;
+            height: 20px; color: #fff; font-size: 11px;
+        }
+        QProgressBar::chunk {
+            background: #e50914; border-radius: 4px;
+        }
+    """)
+    layout.addWidget(progress)
+
+    detail = QLabel("Downloading Google Chrome (~100 MB)...")
+    detail.setStyleSheet("color: #666; font-size: 10px;")
+    detail.setFont(QFont("sans-serif", 10))
+    layout.addWidget(detail)
+
+    dialog.show()
+    QApplication.processEvents()
+
+    class CdmWorker(QThread):
+        progress = QtSignal(int, int)
+        status = QtSignal(str, str)
+        done = QtSignal(str)
+
+        def run(self) -> None:
+            def on_progress(downloaded: int, total: int) -> None:
+                pct = int(downloaded * 80 / total)
+                self.progress.emit(pct, 100)
+                mb = downloaded / (1024 * 1024)
+                tb = total / (1024 * 1024)
+                self.status.emit(
+                    "Downloading Google Chrome...",
+                    f"{mb:.1f} / {tb:.1f} MB",
+                )
+
+            self.status.emit("Downloading Google Chrome...", "")
+            from app.utils.widevine import setup_widevine
+            path = setup_widevine(progress_cb=on_progress)
+            self.progress.emit(90, 100)
+            self.status.emit("Extracting DRM component...", "")
+            self.done.emit(path or "")
+
+    worker = CdmWorker()
+    worker.progress.connect(lambda v, m: progress.setValue(v))
+
+    def _on_status(s: str, d: str) -> None:
+        status.setText(s)
+        if d:
+            detail.setText(d)
+
+    worker.status.connect(_on_status)
+
+    result = [""]
+    worker.done.connect(lambda p: result.__setitem__(0, p))
+    worker.start()
+
+    while worker.isRunning():
+        QApplication.processEvents()
+        worker.wait(50)
+
+    progress.setValue(100)
+    status.setText("Done!")
+    detail.setText("")
+    QApplication.processEvents()
+
+    import time
+    time.sleep(0.3)
+    dialog.close()
+
+    cdm_dir = result[0]
+    if cdm_dir:
+        cdm_so = os.path.join(cdm_dir, "libwidevinecdm.so")
+        if os.path.isfile(cdm_so):
+            _set_widevine_flag(cdm_so)
+            log.info("Widevine CDM installed: %s", cdm_so)
+        else:
+            log.warning("CDM dir set but .so not found: %s", cdm_dir)
+    else:
+        log.warning("Widevine CDM install failed. DRM will not work.")
+
+
+def _configure_webengine(args: argparse.Namespace) -> None:
     is_snap = os.environ.get("SNAP") is not None
     flags: list[str] = []
 
@@ -115,7 +245,6 @@ def _configure_webengine(args: argparse.Namespace) -> None:
 
 
 def _clear_webengine_if_needed() -> None:
-    import os
     import shutil
     from app.utils.config import CACHE_DIR, DATA_DIR
 
@@ -156,24 +285,22 @@ def run(args: argparse.Namespace) -> None:
     _configure_webengine(args)
     _strip_chromium_args()
 
-    import os
     is_snap = os.environ.get("SNAP") is not None
     if is_snap:
         _clear_webengine_if_needed()
 
     app = QApplication(sys.argv)
     app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
-    app.setAttribute(Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings, True)
+    app.setAttribute(
+        Qt.ApplicationAttribute.AA_DontCreateNativeWidgetSiblings, True
+    )
+
+    _ensure_widevine(args.widevine_cdm_path)
 
     if args.profile:
         settings.set("profiles", "current", args.profile)
 
-    cdm_ready = _configure_widevine(args.widevine_cdm_path)
-
     window = MainWindow()
-
-    if not cdm_ready:
-        _start_widevine_install(window)
 
     if settings.get("general", "launch_minimized", False):
         window.hide()
@@ -183,34 +310,6 @@ def run(args: argparse.Namespace) -> None:
     exit_code = app.exec()
     settings.flush()
     sys.exit(exit_code)
-
-
-def _start_widevine_install(window: "MainWindow") -> None:
-    import os
-    from PySide6.QtCore import QThread, Signal as QtSignal
-
-    class CdmInstaller(QThread):
-        finished = QtSignal(str)
-
-        def run(self) -> None:
-            from app.utils.widevine import setup_widevine
-            path = setup_widevine()
-            self.finished.emit(path or "")
-
-    def _on_cdm_ready(path: str) -> None:
-        if path:
-            os.environ["QTWEBENGINE_WIDEVINE_CDM_PATH"] = path
-            log.info("Widevine CDM installed: %s", path)
-            window.browser.reload()
-        else:
-            log.warning(
-                "Widevine CDM install failed. DRM will not work."
-            )
-
-    installer = CdmInstaller(window)
-    installer.finished.connect(_on_cdm_ready)
-    installer.start()
-    log.info("Widevine CDM installing in background...")
 
 
 def main() -> None:

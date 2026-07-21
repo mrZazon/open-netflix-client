@@ -74,6 +74,8 @@ parts:
     source: .
     build-packages: []
     stage-packages:
+      - xz-utils
+      - dpkg
       - libnss3
       - libnspr4
       - libasound2t64

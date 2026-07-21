@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import glob
+import json
 import logging
 import os
 import platform
 import shutil
 import subprocess
-import tarfile
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -14,11 +13,12 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 CDM_FILENAME = "libwidevinecdm.so"
+MANIFEST_FILENAME = "manifest.json"
 CHROME_DEB_URL = (
     "https://dl.google.com/linux/direct/"
     "google-chrome-stable_current_amd64.deb"
 )
-CDM_INTERNAL_PATH = "opt/google/chrome/WidevineCdm/_platform_specific"
+WIDEVINE_INTERNAL_DIR = "opt/google/chrome/WidevineCdm"
 
 
 def _user_cdm_dir() -> Path:
@@ -39,72 +39,60 @@ def _arch_suffix() -> str:
 
 def is_cdm_available() -> bool:
     env_path = os.environ.get("QTWEBENGINE_WIDEVINE_CDM_PATH", "")
-    if env_path and os.path.isfile(env_path):
-        return True
+    if env_path and os.path.isdir(env_path):
+        return (Path(env_path) / CDM_FILENAME).is_file()
     return find_system_cdm() is not None
 
 
 def find_system_cdm() -> str | None:
     home = os.path.expanduser("~")
-    arch = _arch_suffix()
 
     candidates = [
-        _user_cdm_dir() / CDM_FILENAME,
-        Path(f"/opt/google/chrome/WidevineCdm/_platform_specific/{arch}")
-        / CDM_FILENAME,
-        Path(f"/opt/google/chrome/{CDM_FILENAME}"),
-        Path(f"/usr/lib/chromium/{CDM_FILENAME}"),
-        Path(f"/usr/lib/chromium-browser/{CDM_FILENAME}"),
-        Path(f"/usr/lib64/chromium-browser/{CDM_FILENAME}"),
-        Path(f"{home}/.local/lib/{CDM_FILENAME}"),
-        Path(f"{home}/.local/lib/chromium/{CDM_FILENAME}"),
+        _user_cdm_dir(),
+        Path(
+            f"/opt/google/chrome/WidevineCdm"
+            f"/_platform_specific/{_arch_suffix()}"
+        ),
+        Path("/opt/google/chrome/WidevineCdm"),
+        Path("/opt/google/chrome"),
+        Path("/usr/lib/chromium"),
+        Path("/usr/lib/chromium-browser"),
+        Path("/usr/lib64/chromium-browser"),
+        Path(f"{home}/.local/lib"),
+        Path(f"{home}/.local/lib/chromium"),
     ]
 
     if snap := os.environ.get("SNAP"):
-        candidates.insert(
-            0, Path(snap) / "extra" / CDM_FILENAME
-        )
-        candidates.insert(
-            1, Path(os.environ.get("SNAP_USER_DATA", "")) / CDM_FILENAME
-        )
-        candidates.insert(
-            2,
-            Path(os.environ.get("SNAP_USER_COMMON", "")) / CDM_FILENAME,
-        )
+        candidates.insert(0, Path(snap) / "extra")
+        candidates.insert(1, Path(os.environ.get("SNAP_USER_DATA", "")))
+        candidates.insert(2, Path(os.environ.get("SNAP_USER_COMMON", "")))
 
-    for path in candidates:
-        if path.is_file():
-            return str(path)
-
-    for pattern in [
-        str(_user_cdm_dir() / f"{CDM_FILENAME}.*"),
-        f"/usr/lib/{CDM_FILENAME}.*",
-        f"/usr/lib64/{CDM_FILENAME}.*",
-    ]:
-        matches = sorted(
-            glob.glob(pattern), key=os.path.getmtime, reverse=True
-        )
-        for match in matches:
-            if os.path.isfile(match):
-                return match
+    for cdm_dir in candidates:
+        if (cdm_dir / CDM_FILENAME).is_file():
+            return str(cdm_dir)
 
     return None
 
 
-def _download_chrome_deb(dest: Path) -> bool:
+def _download_chrome_deb(dest: Path, progress_cb=None) -> bool:
     log.info("Downloading Google Chrome deb...")
     try:
         req = urllib.request.Request(
             CHROME_DEB_URL,
             headers={"User-Agent": "Mozilla/5.0"},
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
             with open(dest, "wb") as f:
                 while True:
                     chunk = resp.read(65536)
                     if not chunk:
                         break
                     f.write(chunk)
+                    downloaded += len(chunk)
+                    if progress_cb and total > 0:
+                        progress_cb(downloaded, total)
         log.info("Downloaded Chrome deb: %s", dest)
         return True
     except Exception as exc:
@@ -113,119 +101,200 @@ def _download_chrome_deb(dest: Path) -> bool:
 
 
 def _extract_cdm_from_deb(deb_path: Path, dest: Path) -> bool:
+    log.info("Extracting CDM from Chrome deb...")
+    cdm_dir = dest.parent
+
     with tempfile.TemporaryDirectory() as tmp:
-        log.info("Extracting CDM from Chrome deb...")
-        try:
-            result = subprocess.run(
-                ["dpkg-deb", "--fsys-tarfile", str(deb_path)],
-                capture_output=True,
-                check=True,
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            log.info("dpkg-deb not available, trying manual extraction")
-            return _extract_cdm_manual(deb_path, dest)
+        cdm_pattern = "*/" + CDM_FILENAME
+        manifest_pattern = "*/" + MANIFEST_FILENAME
 
-        tar_path = Path(tmp) / "data.tar"
-        tar_path.write_bytes(result.stdout)
+        methods = [
+            [
+                "dpkg-deb", "--fsys-tarfile", str(deb_path),
+            ],
+            _ar_extract_data_tar(deb_path, tmp),
+        ]
 
-        for fmt in (None, "r:xz", "r:zst", "r:gz"):
-            try:
-                kw = {"name": tar_path} if fmt is None else {
-                    "name": tar_path, "mode": fmt}
-                with tarfile.open(**kw) as tar:
-                    for member in tar.getmembers():
-                        if member.name.endswith(CDM_FILENAME):
-                            tar.extract(member, path=tmp)
-                            extracted = Path(tmp) / member.name
-                            dest.parent.mkdir(parents=True, exist_ok=True)
-                            shutil.copy2(str(extracted), str(dest))
-                            log.info("CDM extracted to: %s", dest)
-                            return True
-            except tarfile.TarError:
+        for method in methods:
+            if method is None:
                 continue
 
-        return _extract_cdm_manual(deb_path, dest)
+            if isinstance(method, list) and method[0] == "_ar_done":
+                tar_file = method[1]
+                if tar_file is None:
+                    continue
+                for decompress_cmd in (
+                    ["xz", "-dk", tar_file],
+                    ["unxz", "-k", tar_file],
+                ):
+                    try:
+                        log.info("Decompressing with: %s", " ".join(decompress_cmd))
+                        subprocess.run(
+                            decompress_cmd, check=True, timeout=60,
+                            capture_output=True,
+                        )
+                        decompressed = Path(tar_file).with_suffix("")
+                        if decompressed.is_file():
+                            _tar_extract_cdm(
+                                str(decompressed), cdm_dir, tmp
+                            )
+                            if (dest).is_file():
+                                return True
+                    except (subprocess.CalledProcessError, FileNotFoundError,
+                            subprocess.TimeoutExpired) as exc:
+                        log.info("Decompress failed: %s", exc)
+                continue
+
+            try:
+                log.info("Trying dpkg-deb piped extraction...")
+                result = subprocess.run(
+                    method, capture_output=True, check=True, timeout=120,
+                )
+                tar_file = os.path.join(tmp, "data.tar")
+                with open(tar_file, "wb") as f:
+                    f.write(result.stdout)
+                _tar_extract_cdm(tar_file, cdm_dir, tmp)
+                if dest.is_file():
+                    return True
+            except (subprocess.CalledProcessError, FileNotFoundError,
+                    subprocess.TimeoutExpired) as exc:
+                log.info("Method failed: %s", exc)
+
+        log.warning("All extraction methods failed")
+        return False
 
 
-def _extract_cdm_manual(deb_path: Path, dest: Path) -> bool:
-    with tempfile.TemporaryDirectory() as tmp:
-        ctrl = Path(tmp) / "control.tar"
-        data = Path(tmp) / "data.tar"
-
+def _ar_extract_data_tar(deb_path: Path, tmp: str) -> list | None:
+    try:
         with open(deb_path, "rb") as f:
             magic = f.read(8)
             if magic != b"!<arch>\n":
                 log.warning("Not a valid deb file")
-                return False
-            f.read(2)  # date
-            f.read(6)  # owner
-            f.read(6)  # group
-            f.read(10)  # mode
-            f.read(10)  # size
-            f.read(2)  # end magic
-            ctrl_header = f.read(60)
-            ctrl_size = int(ctrl_header[48:58].strip())
-            ctrl.write_bytes(f.read(ctrl_size))
-            pad = (ctrl_size + 1) & ~1
-            f.read(pad - ctrl_size if pad > ctrl_size else 0)
-            f.read(2)  # data end magic
-            data_header = f.read(60)
-            data_size = int(data_header[48:58].strip())
-            data.write_bytes(f.read(data_size))
+                return None
 
+            for _ in range(10):
+                hdr = f.read(60)
+                if len(hdr) < 60:
+                    return None
+                name = hdr[:16].decode("ascii", errors="replace").strip()
+                size = int(hdr[48:58].decode("ascii").strip())
+                data = f.read(size)
+                pad = (size + 1) & ~1
+                if pad > size:
+                    f.read(pad - size)
+                if name.startswith("data.tar"):
+                    tar_file = os.path.join(tmp, name.rstrip("/"))
+                    with open(tar_file, "wb") as f2:
+                        f2.write(data)
+                    log.info("Extracted %s from ar (%d bytes)", name, size)
+                    return ["_ar_done", tar_file]
+
+    except Exception as exc:
+        log.warning("ar parse failed: %s", exc)
+    return None
+
+
+def _tar_extract_cdm(
+    tar_file: str, cdm_dir: Path, extract_dir: str
+) -> None:
+    cdm_found = False
+    manifest_found = False
+
+    for fmt in (None, "r:xz", "r:zst", "r:gz"):
         try:
-            with tarfile.open(data) as tar:
+            import tarfile
+            kw = {"name": tar_file}
+            if fmt is not None:
+                kw["mode"] = fmt
+            with tarfile.open(**kw) as tar:
                 for member in tar.getmembers():
                     if member.name.endswith(CDM_FILENAME):
-                        tar.extract(member, path=tmp)
-                        extracted = Path(tmp) / member.name
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(str(extracted), str(dest))
-                        log.info("CDM extracted to: %s", dest)
-                        return True
-        except tarfile.TarError:
-            pass
+                        tar.extract(member, path=extract_dir)
+                        extracted = (
+                            Path(extract_dir) / member.name.lstrip("./")
+                        )
+                        cdm_dir.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(
+                            str(extracted), str(cdm_dir / CDM_FILENAME)
+                        )
+                        log.info("CDM extracted: %s", cdm_dir / CDM_FILENAME)
+                        cdm_found = True
+                    if (WIDEVINE_INTERNAL_DIR in member.name
+                            and member.name.endswith(MANIFEST_FILENAME)):
+                        tar.extract(member, path=extract_dir)
+                        extracted = (
+                            Path(extract_dir) / member.name.lstrip("./")
+                        )
+                        shutil.copy2(
+                            str(extracted),
+                            str(cdm_dir / MANIFEST_FILENAME),
+                        )
+                        log.info("Manifest extracted: %s", cdm_dir / MANIFEST_FILENAME)
+                        manifest_found = True
+                if cdm_found:
+                    if not manifest_found:
+                        _write_default_manifest(cdm_dir)
+                    return
+        except Exception as exc:
+            log.debug("tarfile format %s failed: %s", fmt, exc)
+            continue
 
-        try:
-            with tarfile.open(data, "r:xz") as tar:
-                for member in tar.getmembers():
-                    if member.name.endswith(CDM_FILENAME):
-                        tar.extract(member, path=tmp)
-                        extracted = Path(tmp) / member.name
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(str(extracted), str(dest))
-                        log.info("CDM extracted to: %s", dest)
-                        return True
-        except tarfile.TarError:
-            pass
+    if not cdm_found:
+        for p in Path(extract_dir).rglob(CDM_FILENAME):
+            cdm_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(str(p), str(cdm_dir / CDM_FILENAME))
+            log.info("CDM found via glob: %s", cdm_dir / CDM_FILENAME)
+            cdm_found = True
+            break
 
-        try:
-            with tarfile.open(data, "r:zst") as tar:
-                for member in tar.getmembers():
-                    if member.name.endswith(CDM_FILENAME):
-                        tar.extract(member, path=tmp)
-                        extracted = Path(tmp) / member.name
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        shutil.copy2(str(extracted), str(dest))
-                        log.info("CDM extracted to: %s", dest)
-                        return True
-        except tarfile.TarError:
-            pass
+    if cdm_found and not manifest_found:
+        for p in Path(extract_dir).rglob(MANIFEST_FILENAME):
+            if WIDEVINE_INTERNAL_DIR in str(p):
+                shutil.copy2(
+                    str(p), str(cdm_dir / MANIFEST_FILENAME)
+                )
+                log.info("Manifest found via glob: %s", cdm_dir / MANIFEST_FILENAME)
+                manifest_found = True
+                break
 
-    return False
+    if cdm_found and not manifest_found:
+        _write_default_manifest(cdm_dir)
 
 
-def setup_widevine() -> str | None:
+def _write_default_manifest(cdm_dir: Path) -> None:
+    manifest = {
+        "manifest_version": 2,
+        "version": "0.0.0.0",
+        "x-cdm-codecs": "vp8,vp09,avc1,av01",
+        "x-cdm-module-versions": "4",
+        "x-cdm-interface-versions": "10",
+        "x-cdm-host-versions": "10",
+        "x-cdm-path": ".",
+    }
+    path = cdm_dir / MANIFEST_FILENAME
+    path.write_text(json.dumps(manifest))
+    log.info("Default manifest written to: %s", path)
+
+
+def setup_widevine(progress_cb=None) -> str | None:
     existing = find_system_cdm()
     if existing:
         cdm_dir = _user_cdm_dir()
         target = cdm_dir / CDM_FILENAME
-        if existing == str(target):
+        if existing == str(cdm_dir):
+            if not (cdm_dir / MANIFEST_FILENAME).is_file():
+                _write_default_manifest(cdm_dir)
             return existing
         cdm_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(existing, str(target))
-        log.info("CDM copied to: %s", target)
-        return str(target)
+        shutil.copy2(str(Path(existing) / CDM_FILENAME), str(target))
+        manifest_src = Path(existing) / MANIFEST_FILENAME
+        manifest_dst = cdm_dir / MANIFEST_FILENAME
+        if manifest_src.is_file():
+            shutil.copy2(str(manifest_src), str(manifest_dst))
+        elif not manifest_dst.is_file():
+            _write_default_manifest(cdm_dir)
+        log.info("CDM copied to: %s", cdm_dir)
+        return str(cdm_dir)
 
     cdm_dir = _user_cdm_dir()
     cdm_dir.mkdir(parents=True, exist_ok=True)
@@ -235,9 +304,9 @@ def setup_widevine() -> str | None:
 
     with tempfile.TemporaryDirectory() as tmp:
         deb_path = Path(tmp) / "google-chrome-stable.deb"
-        if _download_chrome_deb(deb_path):
+        if _download_chrome_deb(deb_path, progress_cb):
             if _extract_cdm_from_deb(deb_path, target):
-                return str(target)
+                return str(cdm_dir)
 
     log.error(
         "Could not install Widevine CDM.\n"
